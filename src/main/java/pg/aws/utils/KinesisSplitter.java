@@ -10,12 +10,13 @@ import com.amazonaws.services.kinesis.model.DescribeStreamResult;
 import com.amazonaws.services.kinesis.model.Shard;
 import com.amazonaws.services.kinesis.model.SplitShardRequest;
 import com.amazonaws.util.StringUtils;
-import lombok.extern.java.Log;
 
 import java.math.BigInteger;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
+
+import lombok.extern.java.Log;
 
 /**
  * Simple tool to split all the shards of the given AWS Kinesis stream.
@@ -31,20 +32,27 @@ public class KinesisSplitter {
         String streamName = args[0];
         String awsAccessKey = null;
         String awsSecretKey = null;
+        String shardToSplit = null;
 
-        if (args.length == 3) {
+        if (args.length == 4) {
             awsAccessKey = args[1];
             awsSecretKey = args[2];
+            shardToSplit = args[3];
+        }
+
+        if(shardToSplit == null || "".equalsIgnoreCase(shardToSplit)){
+            System.out.println("Invalid shard id provided.");
+            System.exit(-1);
         }
 
         try {
-            new KinesisSplitter().split(streamName, awsAccessKey, awsSecretKey, 30);
+            new KinesisSplitter().split(streamName, awsAccessKey, awsSecretKey, 30, shardToSplit);
         } catch (final InterruptedException | AmazonClientException ex) {
             log.log(Level.SEVERE, "Error while splitting the stream: " + streamName, ex);
         }
     }
 
-    public void split(final String streamName, final String awsAccessKey, final String awsSecretKey, long secsToWait)
+    public void split(final String streamName, final String awsAccessKey, final String awsSecretKey, long secsToWait, String shardToSplit)
             throws InterruptedException {
 
         AWSCredentialsProvider creds = createAwsCredentialsProvider(awsAccessKey, awsSecretKey);
@@ -57,6 +65,12 @@ public class KinesisSplitter {
         log.log(Level.INFO, "Splitting the Stream: [{0}], there are [{1}] shards to split.",
                 new Object[]{streamName, shards.size()});
         for (final Shard shard : shards) {
+
+            if(!shardToSplit.equalsIgnoreCase(shard.getShardId())){
+                System.out.println("Ignoring this shard "+ shard.getShardId());
+                continue;
+            }
+
             // Gets the new shard start key.
             BigInteger startKey = new BigInteger(shard.getHashKeyRange().getStartingHashKey());
             BigInteger endKey = new BigInteger(shard.getHashKeyRange().getEndingHashKey());
@@ -75,6 +89,8 @@ public class KinesisSplitter {
                     .withNewStartingHashKey(newStartKey));
 
             // Give some time to kinesis to process.
+            log.log(Level.INFO, "Split Succcess for the Shard:[{0}]", new String[]{shard.getShardId()});
+
             TimeUnit.SECONDS.sleep(secsToWait);
         }
         log.info("Done!");
